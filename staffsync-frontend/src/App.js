@@ -7,8 +7,6 @@ import {
 
 const API = process.env.REACT_APP_API_URL || "https://staffsync-backend-0iiy.onrender.com/api";
 
-// Explicit backend endpoint URL
-const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:5000/api";
 /* ---------- data layer ---------- */
 const store = {
   get: (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
@@ -19,28 +17,22 @@ async function api(path, { method = "GET", body } = {}) {
   const token = store.get("ss_token");
   const res = await fetch(API + path, {
     method,
-    headers: { 
-      "Content-Type": "application/json", 
-      ...(token ? { Authorization: `Bearer ${token}` } : {}) 
-    },
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
-
   if (!res.ok) {
     const errText = await res.text();
-    let message = `Request failed (${res.status})`;
+    let msg = `Request failed (${res.status})`;
     try {
-      const parsed = JSON.parse(errText);
-      if (parsed.message) message = parsed.message;
+      const errData = JSON.parse(errText);
+      if (errData.message) msg = errData.message;
     } catch (e) {
-      if (errText) message = errText;
+      if (errText) msg = errText;
     }
-    throw new Error(message);
+    throw new Error(msg);
   }
-
   return res.status === 204 ? null : res.json();
 }
-
 function useResource(path) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -48,7 +40,7 @@ function useResource(path) {
   const fetchResource = async () => {
     try {
       setLoading(true);
-      const r = await api(path);
+      const r = await api(path);g
       setData(Array.isArray(r) ? r : r.data || []);
     } catch (err) {
       console.error(err.message);
