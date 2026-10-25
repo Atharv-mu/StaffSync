@@ -40,11 +40,6 @@ async function api(path, { method = "GET", body } = {}) {
 
   return res.status === 204 ? null : res.json();
 }
-  }
-}
-  }
-  return res.status === 204 ? null : res.json();
-}
 
 function useResource(path) {
   const [data, setData] = useState([]);
