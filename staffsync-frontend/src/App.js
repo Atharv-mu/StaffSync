@@ -23,9 +23,15 @@ async function api(path, { method = "GET", body } = {}) {
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
+ if (!res.ok) {
+  const text = await res.text();
+  try {
+    const errData = JSON.parse(text);
     throw new Error(errData.message || `Request failed (${res.status})`);
+  } catch (e) {
+    throw new Error(`Server returned ${res.status}: ${text.slice(0, 100)}`);
+  }
+}
   }
   return res.status === 204 ? null : res.json();
 }
