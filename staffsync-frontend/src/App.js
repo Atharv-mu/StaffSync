@@ -6,8 +6,7 @@ import {
 } from "lucide-react";
 
 // Explicit backend endpoint URL
-const API = "http://localhost:5000/api";
-
+const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:5000/api";
 /* ---------- data layer ---------- */
 const store = {
   get: (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
