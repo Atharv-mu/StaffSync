@@ -8,13 +8,15 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const JWT_SECRET = "staffsync_secret_key_123";
+// Secret Keys (Render environment variables se lega ya fallback local string)
+const JWT_SECRET = process.env.JWT_SECRET || "staffsync_secret_key_123";
+const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://en24it3010020_db_user:IsBlZ6Bi8XZWqI28@cluster0.rqa2jp6.mongodb.net/staffsync?retryWrites=true&w=majority";
 
-// MongoDB Connection
-mongoose.connect("
-mongodb+srv://en24it3010020_db_user:IsBlZ6Bi8XZWqI28@cluster0.rqa2jp6.mongodb.net/staffsync?retryWrites=true&w=majority")
+// MongoDB Connection (Single-line formatted string)
+mongoose.connect(MONGO_URI)
   .then(() => console.log("MongoDB Atlas Connected Successfully!"))
   .catch((err) => console.error("MongoDB Error:", err));
+
 // User Schema
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
@@ -99,5 +101,6 @@ app.get("/api/attendance", (req, res) => res.json([]));
 app.get("/api/announcements", (req, res) => res.json([]));
 app.get("/api/trainings", (req, res) => res.json([]));
 
-const PORT = 5000;
+// Render dynamic PORT ya default 5000
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
