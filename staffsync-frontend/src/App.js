@@ -15,21 +15,31 @@ const store = {
   set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
   del: (k) => { try { localStorage.removeItem(k); } catch {} },
 };
-
 async function api(path, { method = "GET", body } = {}) {
   const token = store.get("ss_token");
   const res = await fetch(API + path, {
     method,
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { 
+      "Content-Type": "application/json", 
+      ...(token ? { Authorization: `Bearer ${token}` } : {}) 
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
- if (!res.ok) {
-  const text = await res.text();
-  try {
-    const errData = JSON.parse(text);
-    throw new Error(errData.message || `Request failed (${res.status})`);
-  } catch (e) {
-    throw new Error(`Server returned ${res.status}: ${text.slice(0, 100)}`);
+
+  if (!res.ok) {
+    const errText = await res.text();
+    let message = `Request failed (${res.status})`;
+    try {
+      const parsed = JSON.parse(errText);
+      if (parsed.message) message = parsed.message;
+    } catch (e) {
+      if (errText) message = errText;
+    }
+    throw new Error(message);
+  }
+
+  return res.status === 204 ? null : res.json();
+}
   }
 }
   }
