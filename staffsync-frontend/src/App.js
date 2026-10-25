@@ -1,18 +1,15 @@
 import React, { useState, useEffect, createContext, useContext } from "react";
-import { BrowserRouter, Routes, Route, NavLink, Navigate, Outlet } from "react-router-dom";
-import {
-  LayoutDashboard, Users, CalendarOff, Clock, Megaphone, GraduationCap,
-  UserCircle, LogOut, Plus, X, Search, Check, Trash2
-} from "lucide-react";
+import { BrowserRouter, Routes, Route, Navigate, Link } from "react-router-dom";
 
-const API = process.env.REACT_APP_API_URL || "https://staffsync-backend-0iiy.onrender.com/api";
+const API = "https://staffsync-backend-0iiy.onrender.com/api";
 
-/* ---------- data layer ---------- */
+/* ------------ data layer ------------ */
 const store = {
   get: (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
   set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
   del: (k) => { try { localStorage.removeItem(k); } catch {} },
 };
+
 async function api(path, { method = "GET", body } = {}) {
   const token = store.get("ss_token");
   const res = await fetch(API + path, {
@@ -22,7 +19,7 @@ async function api(path, { method = "GET", body } = {}) {
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || `Request failed with status ${res.status}`);
+    throw new Error(text || `Request failed (${res.status})`);
   }
   return res.status === 204 ? null : res.json();
 }
