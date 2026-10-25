@@ -40,7 +40,7 @@ function useResource(path) {
   const fetchResource = async () => {
     try {
       setLoading(true);
-      const r = await api(path);g
+      const r = await api(path);
       setData(Array.isArray(r) ? r : r.data || []);
     } catch (err) {
       console.error(err.message);
