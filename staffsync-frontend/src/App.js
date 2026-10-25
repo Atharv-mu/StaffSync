@@ -5,6 +5,8 @@ import {
   UserCircle, LogOut, Plus, X, Search, Check, Trash2
 } from "lucide-react";
 
+const API = process.env.REACT_APP_API_URL || "https://staffsync-backend-0iiy.onrender.com/api";
+
 // Explicit backend endpoint URL
 const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:5000/api";
 /* ---------- data layer ---------- */
