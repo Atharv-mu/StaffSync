@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, createContext, useContext } fr
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation } from "react-router-dom";
 import {
   Users, Calendar, Clock, LogOut, Plus, Trash2, Check, X,
-  LayoutDashboard, Megaphone, CheckCircle, Search, UserPlus, Send,
+  LayoutDashboard, Megaphone, CheckCircle, Search, UserPlus, Send, GraduationCap,
 } from "lucide-react";
 
 const API = process.env.REACT_APP_API_URL || "https://staffsync-backend-0iiy.onrender.com/api";
@@ -111,6 +111,7 @@ function Sidebar() {
     { name: "Attendance", path: "/attendance", icon: Clock },
     { name: "Leaves", path: "/leaves", icon: Calendar },
     { name: "Announcements", path: "/announcements", icon: Megaphone },
+    { name: "Training", path: "/training", icon: GraduationCap },
   ];
 
   return (
@@ -831,6 +832,161 @@ function ProtectedRoute({ children }) {
   return <Layout>{children}</Layout>;
 }
 
+/* ==========================================
+   TRAINING & DEVELOPMENT COMPONENT
+   ========================================== */
+const EMPTY_TRAINING = { title: "", description: "", trainer: "", team: "All Teams", mode: "Online", startDate: "", endDate: "" };
+const TEAMS = ["All Teams", "Engineering", "HR", "Sales", "Marketing", "Finance", "Support"];
+
+function Training() {
+  const { user } = useAuth();
+  const admin = isAdmin(user);
+  const [items, setItems] = useState([]);
+  const [showModal, setShowModal] = useState(false);
+  const [form, setForm] = useState(EMPTY_TRAINING);
+
+  const fetchTrainings = useCallback(async () => {
+    try {
+      setItems(toList(await api("/trainings")));
+    } catch (err) {
+      console.error(err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchTrainings();
+  }, [fetchTrainings]);
+
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    try {
+      await api("/trainings", { method: "POST", body: form });
+      setShowModal(false);
+      setForm(EMPTY_TRAINING);
+      fetchTrainings();
+    } catch (err) {
+      alert(err.message || "Failed to create training");
+    }
+  };
+
+  const handleEnroll = async (id) => {
+    try {
+      await api(`/trainings/${id}/enroll`, { method: "POST" });
+      fetchTrainings();
+    } catch (err) {
+      alert(err.message || "Failed to update enrollment");
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete this training program?")) return;
+    try {
+      await api(`/trainings/${id}`, { method: "DELETE" });
+      fetchTrainings();
+    } catch (err) {
+      alert(err.message || "Failed to delete training");
+    }
+  };
+
+  return (
+    <div className="page-container">
+      <header className="page-header flex-between">
+        <div>
+          <h1>Training & Development</h1>
+          <p>Upskilling programs for teams. Enroll and grow your skills.</p>
+        </div>
+        {admin && (
+          <button className="btn-primary" onClick={() => setShowModal(true)}>
+            <Plus size={18} /> New Program
+          </button>
+        )}
+      </header>
+
+      {items.length === 0 ? (
+        <div className="empty-card"><p>No training programs yet.</p></div>
+      ) : (
+        <div className="cards-grid">
+          {items.map((t) => (
+            <div key={t._id} className="info-card">
+              <div className="flex-between">
+                <h4>{t.title}</h4>
+                <span className="badge badge-emp">{t.team}</span>
+              </div>
+              <p>{t.description || "No description."}</p>
+              <p><strong>Trainer:</strong> {t.trainer} &nbsp;|&nbsp; <strong>Mode:</strong> {t.mode}</p>
+              <p><strong>Dates:</strong> {fmtDate(t.startDate)} to {fmtDate(t.endDate)}</p>
+              <p><strong>Enrolled:</strong> {t.enrolledCount}</p>
+              {admin && t.participants?.length > 0 && (
+                <small>Participants: {t.participants.map((p) => p.name).join(", ")}</small>
+              )}
+              <div className="flex-align gap-2 mt-4">
+                <button className={t.isEnrolled ? "btn-secondary" : "btn-success"} onClick={() => handleEnroll(t._id)}>
+                  {t.isEnrolled ? "Leave Program" : "Enroll Now"}
+                </button>
+                {admin && (
+                  <button className="btn-danger-icon" onClick={() => handleDelete(t._id)}>
+                    <Trash2 size={16} />
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h3>New Training Program</h3>
+              <button className="close-btn" onClick={() => setShowModal(false)}><X size={20} /></button>
+            </div>
+            <form onSubmit={handleCreate}>
+              <div className="form-group">
+                <label>Program Title</label>
+                <input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. React Advanced Workshop" />
+              </div>
+              <div className="form-group">
+                <label>Description</label>
+                <textarea rows="3" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="What will be covered..." />
+              </div>
+              <div className="form-group">
+                <label>Trainer</label>
+                <input value={form.trainer} onChange={(e) => setForm({ ...form, trainer: e.target.value })} placeholder="Trainer name" />
+              </div>
+              <div className="form-group">
+                <label>Team</label>
+                <select value={form.team} onChange={(e) => setForm({ ...form, team: e.target.value })}>
+                  {TEAMS.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Mode</label>
+                <select value={form.mode} onChange={(e) => setForm({ ...form, mode: e.target.value })}>
+                  <option value="Online">Online</option>
+                  <option value="Offline">Offline</option>
+                  <option value="Hybrid">Hybrid</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Start Date</label>
+                <input type="date" required value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label>End Date</label>
+                <input type="date" required value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} />
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
+                <button type="submit" className="btn-primary">Create Program</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 export default function App() {
   return (
     <AuthProvider>
@@ -842,6 +998,7 @@ export default function App() {
           <Route path="/attendance" element={<ProtectedRoute><Attendance /></ProtectedRoute>} />
           <Route path="/leaves" element={<ProtectedRoute><Leaves /></ProtectedRoute>} />
           <Route path="/announcements" element={<ProtectedRoute><Announcements /></ProtectedRoute>} />
+          <Route path="/training" element={<ProtectedRoute><Training /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
