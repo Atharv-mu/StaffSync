@@ -14,8 +14,6 @@ The application provides role-based access for administrators, HR personnel, and
 - **Announcements:** Includes a dedicated page for displaying organizational announcements.
 - **Role-Based Access:** Provides administrative controls in the user interface for accounts assigned the `admin` or `hr` role.
 
-> **Current Implementation Status:** Authentication and employee CRUD operations are connected to the database. The attendance, leave, announcements, and training endpoints are currently placeholders that return empty lists. These modules require further backend implementation to support persistent data storage and complete functionality.
-
 ## Technology Stack
 
 | Layer | Technology |
