@@ -1,28 +1,9 @@
 import "./App.css";
-import React, { useState, useEffect, createContext, useContext } from "react";
+import React, { useState, useEffect, useCallback, createContext, useContext } from "react";
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation } from "react-router-dom";
-import { 
-  Users, 
-  Calendar, 
-  Clock, 
-  LogOut, 
-  Plus, 
-  Trash2, 
-  Check, 
-  Shield, 
-  UserCheck,  
-  X,
-  LayoutDashboard,
-  Megaphone,
-  CheckCircle,
-  XCircle,
-  Search,
-  Filter,
-  UserPlus,
-  Send,
-  Building,
-  Mail,
-  Briefcase
+import {
+  Users, Calendar, Clock, LogOut, Plus, Trash2, Check, X,
+  LayoutDashboard, Megaphone, CheckCircle, Search, UserPlus, Send,
 } from "lucide-react";
 
 const API = process.env.REACT_APP_API_URL || "https://staffsync-backend-0iiy.onrender.com/api";
@@ -36,32 +17,45 @@ const store = {
   del: (k) => { try { localStorage.removeItem(k); } catch {} },
 };
 
+// Reads the body as text first, so an empty / non-JSON reply never crashes with
+// "Unexpected end of JSON input".
 async function api(path, { method = "GET", body } = {}) {
   const token = store.get("ss_token");
-  const res = await fetch(API + path, {
-    method,
-    headers: { 
-      "Content-Type": "application/json", 
-      ...(token ? { Authorization: `Bearer ${token}` } : {}) 
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(API + path, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new Error("Cannot reach the server. It may be waking up, wait 30 seconds and try again.");
+  }
 
-  const contentType = res.headers.get("content-type");
-  let data;
-  if (contentType && contentType.includes("application/json")) {
-    data = await res.json();
-  } else {
-    const text = await res.text();
-    data = { message: text || `Server error (${res.status})` };
+  const text = await res.text();
+  let data = null;
+  if (text) {
+    try { data = JSON.parse(text); } catch { data = { message: text }; }
   }
 
   if (!res.ok) {
-    throw new Error(data.message || data.error || `Request failed with status ${res.status}`);
+    const err = new Error((data && (data.message || data.error)) || `Request failed (${res.status})`);
+    err.status = res.status;
+    throw err;
   }
   return data;
-}turn res.status === 204 ? null : res.json();
 }
+
+// Backend may reply with an array or { data: [...] }
+const toList = (r) => (Array.isArray(r) ? r : Array.isArray(r?.data) ? r.data : []);
+
+// Backend sends "admin" (or "hr"); both get admin powers in the UI.
+const isAdmin = (u) => ["admin", "hr"].includes(String(u?.role || "").toLowerCase());
+const norm = (s) => String(s || "").toLowerCase();
+const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : "–");
 
 /* ==========================================
    AUTHENTICATION CONTEXT
@@ -70,14 +64,14 @@ const AuthContext = createContext(null);
 const useAuth = () => useContext(AuthContext);
 
 function AuthProvider({ children }) {
-  const [user, setUser] = useState(store.get("ss_user"));
-  const [token, setToken] = useState(store.get("ss_token"));
+  const [user, setUser] = useState(() => store.get("ss_user"));
+  const [token, setToken] = useState(() => store.get("ss_token"));
 
   const login = (u, t) => {
     setUser(u);
     setToken(t);
     store.set("ss_user", u);
-    store.set("ss_token", t);
+    if (t) store.set("ss_token", t);
   };
 
   const logout = () => {
@@ -121,11 +115,7 @@ function Sidebar() {
           const Icon = item.icon;
           const isActive = location.pathname === item.path;
           return (
-            <Link 
-              key={item.path} 
-              to={item.path} 
-              className={`nav-link ${isActive ? "active" : ""}`}
-            >
+            <Link key={item.path} to={item.path} className={`nav-link ${isActive ? "active" : ""}`}>
               <Icon size={18} />
               <span>{item.name}</span>
             </Link>
@@ -135,9 +125,7 @@ function Sidebar() {
 
       <div className="sidebar-footer">
         <div className="user-profile">
-          <div className="avatar">
-            {user?.name ? user.name.charAt(0).toUpperCase() : "U"}
-          </div>
+          <div className="avatar">{user?.name ? user.name.charAt(0).toUpperCase() : "U"}</div>
           <div className="user-info">
             <span className="user-name">{user?.name || "User"}</span>
             <span className="user-role">{user?.role || "employee"}</span>
@@ -155,11 +143,13 @@ function Sidebar() {
    LOGIN PAGE COMPONENT
    ========================================== */
 function Login() {
-  const { login } = useAuth();
+  const { user, login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  if (user) return <Navigate to="/" replace />;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -167,10 +157,8 @@ function Login() {
     setLoading(true);
 
     try {
-      const data = await api("/auth/login", {
-        method: "POST",
-        body: { email, password },
-      });
+      const data = await api("/auth/login", { method: "POST", body: { email, password } });
+      if (!data || !data.user) throw new Error("Server sent an empty response. Wait 30 seconds and try again.");
       login(data.user, data.token);
     } catch (err) {
       setError(err.message || "Invalid login credentials");
@@ -189,9 +177,9 @@ function Login() {
         <h1>Streamline your workforce in one portal.</h1>
         <p>Real-time attendance tracking, seamless leave management, and employee directories.</p>
         <div className="banner-image-wrapper">
-          <img 
-            src="https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=800&q=80" 
-            alt="Office workspace" 
+          <img
+            src="https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=800&q=80"
+            alt="Office workspace"
           />
         </div>
       </div>
@@ -208,24 +196,12 @@ function Login() {
           <form onSubmit={handleSubmit}>
             <div className="form-group">
               <label>Work Email</label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="sana@staffsync.io"
-              />
+              <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="sana@staffsync.io" />
             </div>
 
             <div className="form-group">
               <label>Password</label>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-              />
+              <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
             </div>
 
             {error && <div className="error-alert">{error}</div>}
@@ -245,25 +221,24 @@ function Login() {
    ========================================== */
 function Dashboard() {
   const { user } = useAuth();
-  const [stats, setStats] = useState({ employeesCount: 0, pendingLeaves: 0, presentToday: 0 });
+  const [stats, setStats] = useState({ employeesCount: 0, pendingLeaves: 0 });
   const [announcements, setAnnouncements] = useState([]);
+  const attendance = store.get("ss_att") || [];
+  const today = new Date().toLocaleDateString();
+  const presentToday = attendance.some((a) => a.date === today);
 
   useEffect(() => {
     async function loadDashboardData() {
-      try {
-        const emp = await api("/employees").catch(() => []);
-        const leaves = await api("/leaves").catch(() => []);
-        const ann = await api("/announcements").catch(() => []);
-        
-        setStats({
-          employeesCount: Array.isArray(emp) ? emp.length : 0,
-          pendingLeaves: Array.isArray(leaves) ? leaves.filter(l => l.status === "pending").length : 0,
-          presentToday: 1,
-        });
-        setAnnouncements(Array.isArray(ann) ? ann.slice(0, 3) : []);
-      } catch (err) {
-        console.error("Dashboard fetch error:", err);
-      }
+      const [emp, leaves, ann] = await Promise.all([
+        api("/employees").catch(() => []),
+        api("/leaves").catch(() => []),
+        api("/announcements").catch(() => []),
+      ]);
+      setStats({
+        employeesCount: toList(emp).length,
+        pendingLeaves: toList(leaves).filter((l) => norm(l.status) === "pending").length,
+      });
+      setAnnouncements(toList(ann).slice(0, 3));
     }
     loadDashboardData();
   }, []);
@@ -295,23 +270,21 @@ function Dashboard() {
             <span>Attendance Status Today</span>
             <Clock className="stat-icon" size={20} />
           </div>
-          <span className="stat-value">{stats.presentToday > 0 ? "Present" : "Not Marked"}</span>
+          <span className="stat-value">{presentToday ? "Present" : "Not Marked"}</span>
         </div>
       </div>
 
       <section className="dashboard-section">
         <h3>Recent Company Announcements</h3>
         {announcements.length === 0 ? (
-          <div className="empty-card">
-            <p>No announcements posted yet.</p>
-          </div>
+          <div className="empty-card"><p>No announcements posted yet.</p></div>
         ) : (
           <div className="cards-grid">
             {announcements.map((item, idx) => (
-              <div key={idx} className="info-card">
+              <div key={item._id || idx} className="info-card">
                 <h4>{item.title}</h4>
-                <p>{item.content}</p>
-                <small>{new Date(item.createdAt || Date.now()).toLocaleDateString()}</small>
+                <p>{item.content || item.body}</p>
+                <small>{fmtDate(item.createdAt || item.date)}</small>
               </div>
             ))}
           </div>
@@ -324,34 +297,36 @@ function Dashboard() {
 /* ==========================================
    EMPLOYEES MANAGEMENT COMPONENT
    ========================================== */
+const EMPTY_EMP = { name: "", email: "", role: "employee", department: "Engineering" };
+
 function Employees() {
   const { user } = useAuth();
+  const admin = isAdmin(user);
   const [employees, setEmployees] = useState([]);
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", role: "employee", department: "Engineering" });
+  const [form, setForm] = useState(EMPTY_EMP);
   const [loading, setLoading] = useState(false);
 
-  const fetchEmployees = async () => {
+  const fetchEmployees = useCallback(async () => {
     try {
-      const data = await api("/employees");
-      setEmployees(Array.isArray(data) ? data : []);
+      setEmployees(toList(await api("/employees")));
     } catch (err) {
       console.error(err);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchEmployees();
-  }, []);
+  }, [fetchEmployees]);
 
   const handleAddEmployee = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
-      await api("/employees", { method: "POST", body: form });
+      await api("/employees", { method: "POST", body: { ...form, position: form.department, password: "123456" } });
       setShowModal(false);
-      setForm({ name: "", email: "", role: "employee", department: "Engineering" });
+      setForm(EMPTY_EMP);
       fetchEmployees();
     } catch (err) {
       alert(err.message || "Failed to add employee");
@@ -370,9 +345,10 @@ function Employees() {
     }
   };
 
-  const filtered = employees.filter(e => 
-    e.name?.toLowerCase().includes(search.toLowerCase()) || 
-    e.email?.toLowerCase().includes(search.toLowerCase())
+  const filtered = employees.filter(
+    (e) =>
+      e.name?.toLowerCase().includes(search.toLowerCase()) ||
+      e.email?.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -382,7 +358,7 @@ function Employees() {
           <h1>Employees Directory</h1>
           <p>Manage employee records, roles, and departmental access.</p>
         </div>
-        {user?.role === "admin" && (
+        {admin && (
           <button className="btn-primary" onClick={() => setShowModal(true)}>
             <UserPlus size={18} /> Add Employee
           </button>
@@ -392,12 +368,7 @@ function Employees() {
       <div className="toolbar">
         <div className="search-box">
           <Search size={18} />
-          <input 
-            type="text" 
-            placeholder="Search employees by name or email..." 
-            value={search} 
-            onChange={(e) => setSearch(e.target.value)} 
-          />
+          <input type="text" placeholder="Search employees by name or email..." value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
       </div>
 
@@ -409,14 +380,12 @@ function Employees() {
               <th>Email</th>
               <th>Role</th>
               <th>Department</th>
-              {user?.role === "admin" && <th>Actions</th>}
+              {admin && <th>Actions</th>}
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr>
-                <td colSpan="5" className="text-center">No employees found.</td>
-              </tr>
+              <tr><td colSpan="5" className="text-center">No employees found.</td></tr>
             ) : (
               filtered.map((emp) => (
                 <tr key={emp._id || emp.email}>
@@ -428,12 +397,10 @@ function Employees() {
                   </td>
                   <td>{emp.email}</td>
                   <td>
-                    <span className={`badge ${emp.role === "admin" ? "badge-admin" : "badge-emp"}`}>
-                      {emp.role}
-                    </span>
+                    <span className={`badge ${isAdmin(emp) ? "badge-admin" : "badge-emp"}`}>{emp.role}</span>
                   </td>
                   <td>{emp.department || "General"}</td>
-                  {user?.role === "admin" && (
+                  {admin && (
                     <td>
                       <button className="btn-danger-icon" onClick={() => handleDelete(emp._id)}>
                         <Trash2 size={16} />
@@ -457,22 +424,22 @@ function Employees() {
             <form onSubmit={handleAddEmployee}>
               <div className="form-group">
                 <label>Full Name</label>
-                <input required value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Jane Doe" />
+                <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Jane Doe" />
               </div>
               <div className="form-group">
                 <label>Email Address</label>
-                <input type="email" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} placeholder="jane@staffsync.io" />
+                <input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="jane@staffsync.io" />
               </div>
               <div className="form-group">
                 <label>Role</label>
-                <select value={form.role} onChange={e => setForm({...form, role: e.target.value})}>
+                <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
                   <option value="employee">Employee</option>
                   <option value="admin">Admin</option>
                 </select>
               </div>
               <div className="form-group">
                 <label>Department</label>
-                <input value={form.department} onChange={e => setForm({...form, department: e.target.value})} placeholder="Engineering" />
+                <input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} placeholder="Engineering" />
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
@@ -490,25 +457,22 @@ function Employees() {
    ATTENDANCE MANAGEMENT COMPONENT
    ========================================== */
 function Attendance() {
-  const [checkedIn, setCheckedIn] = useState(false);
-  const [checkInTime, setCheckInTime] = useState(null);
-  const [logs, setLogs] = useState([]);
+  const [logs, setLogs] = useState(() => store.get("ss_att") || []);
+  const today = new Date().toLocaleDateString();
+  const todayLog = logs.find((l) => l.date === today);
+  const checkedIn = !!todayLog && todayLog.checkOut === "--";
+
+  const save = (next) => {
+    setLogs(next);
+    store.set("ss_att", next);
+  };
 
   const handleCheckIn = () => {
-    const time = new Date().toLocaleTimeString();
-    setCheckedIn(true);
-    setCheckInTime(time);
-    setLogs([{ date: new Date().toLocaleDateString(), status: "Present", checkIn: time, checkOut: "--" }, ...logs]);
+    save([{ date: today, status: "Present", checkIn: new Date().toLocaleTimeString(), checkOut: "--" }, ...logs]);
   };
 
   const handleCheckOut = () => {
-    const time = new Date().toLocaleTimeString();
-    setCheckedIn(false);
-    if (logs.length > 0) {
-      const updated = [...logs];
-      updated[0].checkOut = time;
-      setLogs(updated);
-    }
+    save(logs.map((l) => (l.date === today && l.checkOut === "--" ? { ...l, checkOut: new Date().toLocaleTimeString() } : l)));
   };
 
   return (
@@ -521,14 +485,15 @@ function Attendance() {
       <div className="card-box flex-between flex-align">
         <div>
           <h3>Today's Shift Status</h3>
-          <p>{checkedIn ? `Checked in at ${checkInTime}` : "You haven't checked in yet today."}</p>
+          <p>{checkedIn ? `Checked in at ${todayLog.checkIn}` : todayLog ? "Shift completed for today." : "You haven't checked in yet today."}</p>
         </div>
         <div>
-          {!checkedIn ? (
+          {!todayLog && (
             <button className="btn-success" onClick={handleCheckIn}>
               <CheckCircle size={18} /> Clock In Now
             </button>
-          ) : (
+          )}
+          {checkedIn && (
             <button className="btn-warning" onClick={handleCheckOut}>
               <Clock size={18} /> Clock Out
             </button>
@@ -552,9 +517,7 @@ function Attendance() {
           </thead>
           <tbody>
             {logs.length === 0 ? (
-              <tr>
-                <td colSpan="4" className="text-center">No attendance recorded today.</td>
-              </tr>
+              <tr><td colSpan="4" className="text-center">No attendance recorded yet.</td></tr>
             ) : (
               logs.map((log, i) => (
                 <tr key={i}>
@@ -575,31 +538,37 @@ function Attendance() {
 /* ==========================================
    LEAVES MANAGEMENT COMPONENT
    ========================================== */
+const EMPTY_LEAVE = { reason: "", startDate: "", endDate: "", type: "Casual" };
+
 function Leaves() {
   const { user } = useAuth();
+  const admin = isAdmin(user);
   const [leaves, setLeaves] = useState([]);
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ reason: "", startDate: "", endDate: "", type: "Casual" });
+  const [form, setForm] = useState(EMPTY_LEAVE);
 
-  const fetchLeaves = async () => {
+  const fetchLeaves = useCallback(async () => {
     try {
-      const data = await api("/leaves");
-      setLeaves(Array.isArray(data) ? data : []);
+      setLeaves(toList(await api("/leaves")));
     } catch (err) {
       console.error(err);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchLeaves();
-  }, []);
+  }, [fetchLeaves]);
 
   const handleApplyLeave = async (e) => {
     e.preventDefault();
     try {
-      await api("/leaves", { method: "POST", body: form });
+      // both field spellings are sent so it works with either backend schema
+      await api("/leaves", {
+        method: "POST",
+        body: { ...form, from: form.startDate, to: form.endDate, employee: user?.name, status: "Pending" },
+      });
       setShowModal(false);
-      setForm({ reason: "", startDate: "", endDate: "", type: "Casual" });
+      setForm(EMPTY_LEAVE);
       fetchLeaves();
     } catch (err) {
       alert(err.message || "Failed to apply leave");
@@ -607,8 +576,14 @@ function Leaves() {
   };
 
   const handleStatusChange = async (id, status) => {
+    const body = { status };
     try {
-      await api(`/leaves/${id}`, { method: "PATCH", body: { status } });
+      try {
+        await api(`/leaves/${id}`, { method: "PUT", body });
+      } catch (err) {
+        if (err.status === 404 || err.status === 405) await api(`/leaves/${id}`, { method: "PATCH", body });
+        else throw err;
+      }
       fetchLeaves();
     } catch (err) {
       alert(err.message || "Status update failed");
@@ -631,37 +606,33 @@ function Leaves() {
         <table className="data-table">
           <thead>
             <tr>
+              {admin && <th>Employee</th>}
               <th>Type</th>
               <th>Reason</th>
               <th>Dates</th>
               <th>Status</th>
-              {user?.role === "admin" && <th>Approve / Reject</th>}
+              {admin && <th>Approve / Reject</th>}
             </tr>
           </thead>
           <tbody>
             {leaves.length === 0 ? (
-              <tr>
-                <td colSpan="5" className="text-center">No leave requests found.</td>
-              </tr>
+              <tr><td colSpan="6" className="text-center">No leave requests found.</td></tr>
             ) : (
-              leaves.map((l) => (
-                <tr key={l._id || l.reason}>
+              leaves.map((l, i) => (
+                <tr key={l._id || i}>
+                  {admin && <td>{l.employee || "–"}</td>}
                   <td className="font-medium">{l.type || "Sick"}</td>
                   <td>{l.reason}</td>
-                  <td>{l.startDate} to {l.endDate}</td>
-                  <td>
-                    <span className={`badge badge-${l.status}`}>
-                      {l.status}
-                    </span>
-                  </td>
-                  {user?.role === "admin" && (
+                  <td>{fmtDate(l.startDate || l.from)} to {fmtDate(l.endDate || l.to)}</td>
+                  <td><span className={`badge badge-${norm(l.status)}`}>{l.status}</span></td>
+                  {admin && (
                     <td>
-                      {l.status === "pending" && (
+                      {norm(l.status) === "pending" && (
                         <div className="flex-align gap-2">
-                          <button className="btn-success-sm" onClick={() => handleStatusChange(l._id, "approved")}>
+                          <button className="btn-success-sm" onClick={() => handleStatusChange(l._id, "Approved")}>
                             <Check size={16} />
                           </button>
-                          <button className="btn-danger-sm" onClick={() => handleStatusChange(l._id, "rejected")}>
+                          <button className="btn-danger-sm" onClick={() => handleStatusChange(l._id, "Rejected")}>
                             <X size={16} />
                           </button>
                         </div>
@@ -685,23 +656,24 @@ function Leaves() {
             <form onSubmit={handleApplyLeave}>
               <div className="form-group">
                 <label>Leave Type</label>
-                <select value={form.type} onChange={e => setForm({...form, type: e.target.value})}>
+                <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
                   <option value="Casual">Casual Leave</option>
                   <option value="Sick">Sick Leave</option>
-                  <option value="Vacation">Vacation</option>
+                  <option value="Annual">Annual Leave</option>
+                  <option value="Unpaid">Unpaid Leave</option>
                 </select>
               </div>
               <div className="form-group">
                 <label>Start Date</label>
-                <input type="date" required value={form.startDate} onChange={e => setForm({...form, startDate: e.target.value})} />
+                <input type="date" required value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
               </div>
               <div className="form-group">
                 <label>End Date</label>
-                <input type="date" required value={form.endDate} onChange={e => setForm({...form, endDate: e.target.value})} />
+                <input type="date" required value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} />
               </div>
               <div className="form-group">
                 <label>Reason</label>
-                <textarea required rows="3" value={form.reason} onChange={e => setForm({...form, reason: e.target.value})} placeholder="Reason for leave..." />
+                <textarea required rows="3" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} placeholder="Reason for leave..." />
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
@@ -720,27 +692,30 @@ function Leaves() {
    ========================================== */
 function Announcements() {
   const { user } = useAuth();
+  const admin = isAdmin(user);
   const [announcements, setAnnouncements] = useState([]);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
 
-  const fetchAnnouncements = async () => {
+  const fetchAnnouncements = useCallback(async () => {
     try {
-      const data = await api("/announcements");
-      setAnnouncements(Array.isArray(data) ? data : []);
+      setAnnouncements(toList(await api("/announcements")));
     } catch (err) {
       console.error(err);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchAnnouncements();
-  }, []);
+  }, [fetchAnnouncements]);
 
   const handlePost = async (e) => {
     e.preventDefault();
     try {
-      await api("/announcements", { method: "POST", body: { title, content } });
+      await api("/announcements", {
+        method: "POST",
+        body: { title, content, body: content, author: user?.name, date: new Date().toISOString() },
+      });
       setTitle("");
       setContent("");
       fetchAnnouncements();
@@ -756,17 +731,17 @@ function Announcements() {
         <p>Stay informed on upcoming events and official updates.</p>
       </header>
 
-      {user?.role === "admin" && (
+      {admin && (
         <div className="card-box mb-6">
           <h3>Post New Announcement</h3>
           <form onSubmit={handlePost} className="mt-4">
             <div className="form-group">
               <label>Title</label>
-              <input required value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Town Hall Meeting Scheduled" />
+              <input required value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Town Hall Meeting Scheduled" />
             </div>
             <div className="form-group">
               <label>Message Content</label>
-              <textarea required rows="3" value={content} onChange={e => setContent(e.target.value)} placeholder="Announcement details..." />
+              <textarea required rows="3" value={content} onChange={(e) => setContent(e.target.value)} placeholder="Announcement details..." />
             </div>
             <button type="submit" className="btn-primary">
               <Send size={16} /> Publish Announcement
@@ -780,12 +755,12 @@ function Announcements() {
           <div className="empty-card"><p>No announcements posted yet.</p></div>
         ) : (
           announcements.map((ann, i) => (
-            <div key={i} className="card-box mb-4">
+            <div key={ann._id || i} className="card-box mb-4">
               <div className="flex-between">
                 <h3>{ann.title}</h3>
-                <small className="text-muted">{new Date(ann.createdAt || Date.now()).toLocaleDateString()}</small>
+                <small className="text-muted">{fmtDate(ann.createdAt || ann.date)}</small>
               </div>
-              <p className="mt-2 text-secondary">{ann.content}</p>
+              <p className="mt-2 text-secondary">{ann.content || ann.body}</p>
             </div>
           ))
         )}
@@ -801,9 +776,7 @@ function Layout({ children }) {
   return (
     <div className="app-layout">
       <Sidebar />
-      <main className="main-content">
-        {children}
-      </main>
+      <main className="main-content">{children}</main>
     </div>
   );
 }
