@@ -10,7 +10,7 @@ import {
   Trash2, 
   Check, 
   Shield, 
-  UserCheck, 
+  UserCheck,  
   X,
   LayoutDashboard,
   Megaphone,
@@ -46,11 +46,21 @@ async function api(path, { method = "GET", body } = {}) {
     },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) {
+
+  const contentType = res.headers.get("content-type");
+  let data;
+  if (contentType && contentType.includes("application/json")) {
+    data = await res.json();
+  } else {
     const text = await res.text();
-    throw new Error(text || `Request failed with status ${res.status}`);
+    data = { message: text || `Server error (${res.status})` };
   }
-  return res.status === 204 ? null : res.json();
+
+  if (!res.ok) {
+    throw new Error(data.message || data.error || `Request failed with status ${res.status}`);
+  }
+  return data;
+}turn res.status === 204 ? null : res.json();
 }
 
 /* ==========================================
