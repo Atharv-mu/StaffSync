@@ -369,7 +369,7 @@ function Employees() {
     e.preventDefault();
     setLoading(true);
     try {
-      await api("/employees", { method: "POST", body: { ...form, position: form.department, password: "123456" } });
+      await api("/employees", { method: "POST", body: { ...form, position: form.department, password: "admin123" } });
       setShowModal(false);
       setForm(EMPTY_EMP);
       fetchEmployees();

@@ -21,7 +21,7 @@ if (!JWT_SECRET || !MONGO_URI) {
 }
 
 const app = express();
-app.set("trust proxy", 1); // Render/Heroku proxy ke peeche rate-limit sahi chale
+app.set("trust proxy", 1); // Needed so rate limiting sees the real client IP behind Render/Heroku proxies
 app.use(helmet());
 
 // FRONTEND_URL = "https://your-frontend.com,http://localhost:3000" (comma separated)
@@ -42,7 +42,7 @@ const isEmail = (s) => typeof s === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.tes
 const validId = (id) => mongoose.isValidObjectId(id);
 const isValidDate = (d) => !Number.isNaN(new Date(d).getTime());
 
-// Production mein internal error details client ko nahi jaate
+// In production, internal error details are not sent to the client
 const fail = (res, err, status = 500) => {
   if (err && err.code === 11000) return res.status(400).json({ message: "Email already exists" });
   if (status === 500) console.error(err);
@@ -126,7 +126,7 @@ app.get("/api/profile", auth, async (req, res) => {
 // ---------- Employees ----------
 app.get("/api/employees", auth, async (req, res) => {
   try {
-    // Normal employees ko sirf basic directory info, phone/address nahi
+    // Regular employees only get basic directory info (no phone/address)
     const fields = isAdminRole(req.user.role) ? "-password" : "name email role department position";
     res.json(await User.find({}).select(fields));
   } catch (err) {
@@ -148,7 +148,7 @@ app.post("/api/employees", auth, adminOnly, async (req, res) => {
 
     if (await User.findOne({ email })) return res.status(400).json({ message: "Email already exists" });
 
-    // Password nahi diya to random temporary password banta hai (response mein ek baar milega)
+    // If no password is given, generate a random temporary one (returned once in the response)
     const tempPassword = password ? null : crypto.randomBytes(6).toString("base64url");
     const hashed = await bcrypt.hash(password || tempPassword, 10);
 
