@@ -156,15 +156,37 @@ function Login() {
     setError("");
     setLoading(true);
 
-    try {
-      const data = await api("/auth/login", { method: "POST", body: { email, password } });
-      if (!data || !data.user) throw new Error("Server sent an empty response. Wait 30 seconds and try again.");
-      login(data.user, data.token);
-    } catch (err) {
-      setError(err.message || "Invalid login credentials");
-    } finally {
-      setLoading(false);
+    // Render free servers sleep; the first calls can come back empty while waking up.
+    // So we retry a few times automatically before giving up.
+    const MAX_TRIES = 5;
+    let lastErr = null;
+    for (let i = 1; i <= MAX_TRIES; i++) {
+      try {
+        const data = await api("/auth/login", { method: "POST", body: { email, password } });
+        const u = data?.user || data?.data?.user || data?.employee || data?.data?.employee;
+        const t = data?.token || data?.data?.token || data?.accessToken;
+        if (u) {
+          login(u, t);
+          setLoading(false);
+          return;
+        }
+        lastErr = new Error(data ? "Login reply has no user: " + JSON.stringify(data).slice(0, 120) : "Server sent an empty response.");
+      } catch (err) {
+        // wrong password etc. should not be retried
+        if (err.status === 400 || err.status === 401 || err.status === 403) {
+          setError(err.message);
+          setLoading(false);
+          return;
+        }
+        lastErr = err;
+      }
+      if (i < MAX_TRIES) {
+        setError(`Server is waking up, retrying (${i}/${MAX_TRIES - 1})...`);
+        await new Promise((r) => setTimeout(r, 8000));
+      }
     }
+    setError(lastErr?.message || "Login failed. Please try again.");
+    setLoading(false);
   };
 
   return (
