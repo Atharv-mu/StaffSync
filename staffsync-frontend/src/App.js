@@ -55,6 +55,16 @@ const toList = (r) => (Array.isArray(r) ? r : Array.isArray(r?.data) ? r.data : 
 // Backend sends "admin" (or "hr"); both get admin powers in the UI.
 const isAdmin = (u) => ["admin", "hr"].includes(String(u?.role || "").toLowerCase());
 const norm = (s) => String(s || "").toLowerCase();
+// Reads the payload of a JWT (id, role, ...) without any library.
+function decodeJwt(token) {
+  try {
+    const part = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(decodeURIComponent(escape(atob(part))));
+  } catch {
+    return null;
+  }
+}
+
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : "–");
 
 /* ==========================================
@@ -163,8 +173,20 @@ function Login() {
     for (let i = 1; i <= MAX_TRIES; i++) {
       try {
         const data = await api("/auth/login", { method: "POST", body: { email, password } });
-        const u = data?.user || data?.data?.user || data?.employee || data?.data?.employee;
+        let u = data?.user || data?.data?.user || data?.employee || data?.data?.employee;
         const t = data?.token || data?.data?.token || data?.accessToken;
+        // Backend sends only { token }: build the user from the token + profile.
+        if (!u && t) {
+          const p = decodeJwt(t) || {};
+          const nice = email.split("@")[0].replace(/[._-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+          u = { id: p.id, role: p.role || "employee", email, name: p.name || nice };
+          store.set("ss_token", t);
+          try {
+            const prof = await api("/profile");
+            const pd = prof?.data || prof;
+            if (pd && typeof pd === "object" && pd.name) u = { ...u, ...pd, role: pd.role || u.role };
+          } catch {}
+        }
         if (u) {
           login(u, t);
           setLoading(false);
