@@ -1,3 +1,4 @@
+import "./App.css";
 import React, { useState, useEffect, createContext, useContext } from "react";
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation } from "react-router-dom";
 import { 
