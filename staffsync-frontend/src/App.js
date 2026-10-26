@@ -6,8 +6,7 @@ import {
   LayoutDashboard, Megaphone, CheckCircle, Search, UserPlus, Send, GraduationCap,
 } from "lucide-react";
 
-const API = process.env.REACT_APP_API_URL || "https://staffsync-backend-0iiy.onrender.com/api";
-
+const API = process.env.REACT_APP_API_URL || "http://localhost:3000/api";
 /* ==========================================
    LOCAL STORAGE & API WRAPPER UTILS
    ========================================== */
