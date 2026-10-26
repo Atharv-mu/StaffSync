@@ -1,4 +1,4 @@
-# StaffSync – Employee Management System
+# StaffSync – HR Management Solution
 
 StaffSync is a full-stack employee management web application designed to simplify and streamline essential human resource operations. It features a React-based frontend and a Node.js, Express.js, and MongoDB backend.
 
