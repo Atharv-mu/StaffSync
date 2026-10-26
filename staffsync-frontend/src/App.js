@@ -1,5 +1,9 @@
-import React, { useState, useEffect, createContext, useContext } from "react";
-import { BrowserRouter, Routes, Route, Navigate, Link } from "react-router-dom";
+import React, { useState, useEffect, useCallback, createContext, useContext } from "react";
+import { BrowserRouter, Routes, Route, Navigate, NavLink, Outlet } from "react-router-dom";
+import {
+  LayoutDashboard, Clock, CalendarOff, Users, GraduationCap, Megaphone,
+  UserCircle, LogOut, Plus, Check, X, Trash2, Search,
+} from "lucide-react";
 
 const API = "https://staffsync-backend-0iiy.onrender.com/api";
 
@@ -12,42 +16,54 @@ const store = {
 
 async function api(path, { method = "GET", body } = {}) {
   const token = store.get("ss_token");
-  const res = await fetch(API + path, {
-    method,
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `Request failed (${res.status})`);
+  let res;
+  try {
+    res = await fetch(API + path, {
+      method,
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new Error("Cannot reach the server. It may be waking up, so wait 30 seconds and try again.");
   }
-  return res.status === 204 ? null : res.json();
+  const text = await res.text();
+  let data = null;
+  if (text) {
+    try { data = JSON.parse(text); } catch { data = text; }
+  }
+  if (!res.ok) {
+    const msg = (data && data.message) || (typeof data === "string" && data) || `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return data;
 }
+
 function useResource(path) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchResource = async () => {
+  const fetchResource = useCallback(async () => {
     try {
       setLoading(true);
       const r = await api(path);
-      setData(Array.isArray(r) ? r : r.data || []);
+      setData(Array.isArray(r) ? r : r?.data || []);
     } catch (err) {
       console.error(err.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [path]);
 
   useEffect(() => {
     fetchResource();
-  }, [path]);
+  }, [fetchResource]);
 
   const add = async (body) => {
     try {
       const r = await api(path, { method: "POST", body });
-      const newEntry = r.data || r;
-      setData((d) => [newEntry, ...d]);
+      const newEntry = r?.data || r;
+      if (newEntry && typeof newEntry === "object") setData((d) => [newEntry, ...d]);
+      else fetchResource();
     } catch (err) {
       alert(err.message);
     }
@@ -112,7 +128,10 @@ function Modal({ title, onClose, children }) {
   return (
     <div className="scrim" onMouseDown={onClose}>
       <div className="modal" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(e) => e.stopPropagation()}>
-        <div className="modal-h"><h3>{title}</h3><button className="icon" onClick={onClose} aria-label="Close"><X size={18} /></button></div>
+        <div className="modal-h">
+          <h3>{title}</h3>
+          <button className="icon" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        </div>
         {children}
       </div>
     </div>
@@ -127,7 +146,9 @@ function Form({ fields, submitLabel, onSubmit, onClose }) {
         <label key={f.name} className={f.wide ? "wide" : ""}>
           {f.label}
           {f.options ? (
-            <select value={v[f.name]} onChange={(e) => setV({ ...v, [f.name]: e.target.value })}>{f.options.map((o) => <option key={o}>{o}</option>)}</select>
+            <select value={v[f.name]} onChange={(e) => setV({ ...v, [f.name]: e.target.value })}>
+              {f.options.map((o) => <option key={o}>{o}</option>)}
+            </select>
           ) : f.area ? (
             <textarea rows={3} required={f.required !== false} value={v[f.name]} onChange={(e) => setV({ ...v, [f.name]: e.target.value })} />
           ) : (
@@ -135,7 +156,10 @@ function Form({ fields, submitLabel, onSubmit, onClose }) {
           )}
         </label>
       ))}
-      <div className="form-actions wide"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button className="btn">{submitLabel}</button></div>
+      <div className="form-actions wide">
+        <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
+        <button className="btn">{submitLabel}</button>
+      </div>
     </form>
   );
 }
@@ -209,9 +233,10 @@ function Login() {
     setErr("");
     try {
       const r = await api("/auth/login", { method: "POST", body: f });
+      if (!r || !r.user) throw new Error("Server sent an empty response. Check the backend login route.");
       login(r.user, r.token);
     } catch (e2) {
-      setErr(e2.message === "Failed to fetch" ? "Backend server is not running on port 5000." : e2.message);
+      setErr(e2.message);
     } finally {
       setBusy(false);
     }
@@ -225,9 +250,9 @@ function Login() {
           <h1>Streamline your workforce in one portal.</h1>
           <p>Real-time attendance tracking, seamless leave management, and employee directories.</p>
           <div className="art-image-card">
-            <img 
-              src="https://images.unsplash.com/photo-1497215728101-856f4ea42174?auto=format&fit=crop&w=1200&q=80" 
-              alt="Office Workspace" 
+            <img
+              src="https://images.unsplash.com/photo-1497215728101-856f4ea42174?auto=format&fit=crop&w=1200&q=80"
+              alt="Office Workspace"
               className="preview-img"
             />
           </div>
@@ -264,12 +289,17 @@ function Overview() {
     : [["Days Present This Month", att.data.length], ["My Pending Leaves", pending], ["Upcoming Trainings", emps.data.length]];
 
   return (
-    <Page title={`Good ${hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening"}, ${user.name.split(" ")[0]}`} sub="Welcome to your HR management overview.">
-      <div className="stats">{stats.map(([l, n]) => <div key={l} className="stat"><b>{n}</b><span>{l}</span></div>)}</div>
+    <Page title={`Good ${hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening"}, ${(user.name || "there").split(" ")[0]}`} sub="Welcome to your HR management overview.">
+      <div className="stats">
+        {stats.map(([l, n]) => <div key={l} className="stat"><b>{n}</b><span>{l}</span></div>)}
+      </div>
       <h2 className="sec">Latest Announcements</h2>
       <div className="stack">
         {news.data.slice(0, 3).map((n) => (
-          <article key={n._id} className="note"><h3>{n.title}</h3><p>{n.body}</p><small className="muted">{n.author} · {fmt(n.date)}</small></article>
+          <article key={n._id} className="note">
+            <h3>{n.title}</h3><p>{n.body}</p>
+            <small className="muted">{n.author} · {fmt(n.date)}</small>
+          </article>
         ))}
         {!news.data.length && <Empty>No announcements posted yet.</Empty>}
       </div>
@@ -286,8 +316,13 @@ function Attendance() {
           <thead><tr><th>Date</th><th>Check In</th><th>Check Out</th><th>Hours Logged</th></tr></thead>
           <tbody>
             {res.data.map((r) => {
-              const h = r.checkIn && r.checkOut ? ((new Date(`1970-01-01T${r.checkOut}`) - new Date(`1970-01-01T${r.checkIn}`)) / 36e5).toFixed(1) : "–";
-              return <tr key={r._id}><td>{fmt(r.date)}</td><td>{r.checkIn || "–"}</td><td>{r.checkOut || "–"}</td><td>{h} hrs</td></tr>;
+              const diff = (new Date(`1970-01-01T${r.checkOut}`) - new Date(`1970-01-01T${r.checkIn}`)) / 36e5;
+              const h = r.checkIn && r.checkOut && !isNaN(diff) ? diff.toFixed(1) : "–";
+              return (
+                <tr key={r._id}>
+                  <td>{fmt(r.date)}</td><td>{r.checkIn || "–"}</td><td>{r.checkOut || "–"}</td><td>{h} hrs</td>
+                </tr>
+              );
             })}
           </tbody>
         </table>
@@ -305,23 +340,38 @@ function Leaves() {
   const review = user.role !== "employee";
   const rows = res.data.filter((l) => filter === "All" || l.status === filter);
   return (
-    <Page title="Leave Applications" sub={review ? "Review and manage team leave requests." : "Apply for leave and track approval status."}
-      action={<button className="btn" onClick={() => setOpen(true)}><Plus size={16} />Apply for Leave</button>}>
-      <div className="chips">{["All", "Pending", "Approved", "Rejected"].map((s) => <button key={s} className={`chip ${filter === s ? "on" : ""}`} onClick={() => setFilter(s)}>{s}</button>)}</div>
+    <Page
+      title="Leave Applications"
+      sub={review ? "Review and manage team leave requests." : "Apply for leave and track approval status."}
+      action={<button className="btn" onClick={() => setOpen(true)}><Plus size={16} />Apply for Leave</button>}
+    >
+      <div className="chips">
+        {["All", "Pending", "Approved", "Rejected"].map((s) => (
+          <button key={s} className={`chip ${filter === s ? "on" : ""}`} onClick={() => setFilter(s)}>{s}</button>
+        ))}
+      </div>
       <div className="table-wrap">
         <table>
-          <thead><tr>{review && <th>Employee</th>}<th>Type</th><th>Dates</th><th>Days</th><th>Reason</th><th>Status</th>{review && <th />}</tr></thead>
+          <thead>
+            <tr>{review && <th>Employee</th>}<th>Type</th><th>Dates</th><th>Days</th><th>Reason</th><th>Status</th>{review && <th />}</tr>
+          </thead>
           <tbody>
             {rows.map((l) => (
               <tr key={l._id}>
                 {review && <td><strong>{l.employee}</strong></td>}
-                <td>{l.type}</td><td>{fmt(l.from)} – {fmt(l.to)}</td><td>{days(l.from, l.to)}</td><td className="clip">{l.reason}</td><td><Badge s={l.status} /></td>
+                <td>{l.type}</td>
+                <td>{fmt(l.from)} – {fmt(l.to)}</td>
+                <td>{days(l.from, l.to)}</td>
+                <td className="clip">{l.reason}</td>
+                <td><Badge s={l.status} /></td>
                 {review && (
                   <td className="acts">
-                    {l.status === "Pending" && (<>
-                      <button className="icon ok" aria-label="Approve" onClick={() => res.patch(l._id, { status: "Approved" })}><Check size={16} /></button>
-                      <button className="icon no" aria-label="Reject" onClick={() => res.patch(l._id, { status: "Rejected" })}><X size={16} /></button>
-                    </>)}
+                    {l.status === "Pending" && (
+                      <>
+                        <button className="icon ok" aria-label="Approve" onClick={() => res.patch(l._id, { status: "Approved" })}><Check size={16} /></button>
+                        <button className="icon no" aria-label="Reject" onClick={() => res.patch(l._id, { status: "Rejected" })}><X size={16} /></button>
+                      </>
+                    )}
                   </td>
                 )}
               </tr>
@@ -332,13 +382,17 @@ function Leaves() {
       </div>
       {open && (
         <Modal title="Apply for Leave" onClose={() => setOpen(false)}>
-          <Form submitLabel="Submit Application" onClose={() => setOpen(false)}
+          <Form
+            submitLabel="Submit Application"
+            onClose={() => setOpen(false)}
             onSubmit={(v) => res.add({ ...v, employee: user.name, status: "Pending" })}
             fields={[
               { name: "type", label: "Leave Type", options: ["Casual", "Sick", "Annual", "Unpaid"], wide: true },
-              { name: "from", label: "From Date", type: "date" }, { name: "to", label: "To Date", type: "date" },
+              { name: "from", label: "From Date", type: "date" },
+              { name: "to", label: "To Date", type: "date" },
               { name: "reason", label: "Reason", area: true, wide: true },
-            ]} />
+            ]}
+          />
         </Modal>
       )}
     </Page>
@@ -350,7 +404,7 @@ function Employees() {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
 
-  const rows = res.data.filter((e) => 
+  const rows = res.data.filter((e) =>
     `${e.name || ""} ${e.department || ""} ${e.position || ""}`.toLowerCase().includes(q.toLowerCase())
   );
 
@@ -361,24 +415,45 @@ function Employees() {
       department: formData.department,
       position: formData.position,
       role: (formData.role || "employee").toLowerCase(),
-      password: "123456"
+      password: "123456",
     });
     setOpen(false);
   };
 
   return (
-    <Page title="Employee Directory" sub={`${res.data.length} registered employees`}
-      action={<button className="btn" onClick={() => setOpen(true)}><Plus size={16} />Add Employee</button>}>
-      <div className="search"><Search size={16} /><input placeholder="Search by name, department or position..." value={q} onChange={(e) => setQ(e.target.value)} /></div>
+    <Page
+      title="Employee Directory"
+      sub={`${res.data.length} registered employees`}
+      action={<button className="btn" onClick={() => setOpen(true)}><Plus size={16} />Add Employee</button>}
+    >
+      <div className="search">
+        <Search size={16} />
+        <input placeholder="Search by name, department or position..." value={q} onChange={(e) => setQ(e.target.value)} />
+      </div>
       <div className="table-wrap">
         <table>
           <thead><tr><th>Name</th><th>Department</th><th>Position</th><th>Access Level</th><th /></tr></thead>
           <tbody>
             {rows.map((e) => (
               <tr key={e._id || e.email}>
-                <td><div className="who"><span className="avatar sm">{initials(e.name)}</span><div><strong>{e.name}</strong><small className="muted">{e.email}</small></div></div></td>
-                <td>{e.department}</td><td>{e.position}</td><td><Badge s={e.role === "hr" ? "HR" : e.role} /></td>
-                <td className="acts"><button className="icon no" aria-label={`Remove ${e.name}`} onClick={() => window.confirm(`Remove ${e.name}?`) && res.remove(e._id)}><Trash2 size={16} /></button></td>
+                <td>
+                  <div className="who">
+                    <span className="avatar sm">{initials(e.name)}</span>
+                    <div><strong>{e.name}</strong><small className="muted">{e.email}</small></div>
+                  </div>
+                </td>
+                <td>{e.department}</td>
+                <td>{e.position}</td>
+                <td><Badge s={e.role === "hr" ? "HR" : e.role} /></td>
+                <td className="acts">
+                  <button
+                    className="icon no"
+                    aria-label={`Remove ${e.name}`}
+                    onClick={() => window.confirm(`Remove ${e.name}?`) && res.remove(e._id)}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -387,14 +462,18 @@ function Employees() {
       </div>
       {open && (
         <Modal title="Add New Employee" onClose={() => setOpen(false)}>
-          <Form submitLabel="Add Employee" onClose={() => setOpen(false)} onSubmit={handleAddEmployee}
+          <Form
+            submitLabel="Add Employee"
+            onClose={() => setOpen(false)}
+            onSubmit={handleAddEmployee}
             fields={[
               { name: "name", label: "Full Name", required: true },
               { name: "email", label: "Work Email", type: "email", required: true },
               { name: "department", label: "Department", required: true },
               { name: "position", label: "Position", required: true },
               { name: "role", label: "Access Level", options: ["employee", "manager", "hr"], wide: true },
-            ]} />
+            ]}
+          />
         </Modal>
       )}
     </Page>
@@ -406,21 +485,34 @@ function Announcements() {
   const res = useResource("/announcements");
   const [open, setOpen] = useState(false);
   return (
-    <Page title="Announcements" sub="Official updates and company news."
-      action={user.role === "hr" && <button className="btn" onClick={() => setOpen(true)}><Plus size={16} />Post Announcement</button>}>
+    <Page
+      title="Announcements"
+      sub="Official updates and company news."
+      action={user.role === "hr" && <button className="btn" onClick={() => setOpen(true)}><Plus size={16} />Post Announcement</button>}
+    >
       <div className="stack">
         {res.data.map((n) => (
           <article key={n._id} className="note">
-            <h3>{n.title}</h3><p>{n.body}</p><small className="muted">{n.author} · {fmt(n.date)}</small>
-            {user.role === "hr" && <button className="icon no del" aria-label="Delete" onClick={() => res.remove(n._id)}><Trash2 size={16} /></button>}
+            <h3>{n.title}</h3><p>{n.body}</p>
+            <small className="muted">{n.author} · {fmt(n.date)}</small>
+            {user.role === "hr" && (
+              <button className="icon no del" aria-label="Delete" onClick={() => res.remove(n._id)}><Trash2 size={16} /></button>
+            )}
           </article>
         ))}
         {!res.data.length && <Empty>No announcements posted yet.</Empty>}
       </div>
       {open && (
         <Modal title="Post Announcement" onClose={() => setOpen(false)}>
-          <Form submitLabel="Publish" onClose={() => setOpen(false)} onSubmit={(v) => res.add({ ...v, author: user.name, date: new Date().toISOString() })}
-            fields={[{ name: "title", label: "Headline", wide: true }, { name: "body", label: "Message", area: true, wide: true }]} />
+          <Form
+            submitLabel="Publish"
+            onClose={() => setOpen(false)}
+            onSubmit={(v) => res.add({ ...v, author: user.name, date: new Date().toISOString() })}
+            fields={[
+              { name: "title", label: "Headline", wide: true },
+              { name: "body", label: "Message", area: true, wide: true },
+            ]}
+          />
         </Modal>
       )}
     </Page>
@@ -433,27 +525,38 @@ function Training() {
   const [open, setOpen] = useState(false);
   const canManage = user.role !== "employee";
   return (
-    <Page title="Training Sessions" sub="Skill development and scheduled sessions."
-      action={canManage && <button className="btn" onClick={() => setOpen(true)}><Plus size={16} />New Program</button>}>
+    <Page
+      title="Training Sessions"
+      sub="Skill development and scheduled sessions."
+      action={canManage && <button className="btn" onClick={() => setOpen(true)}><Plus size={16} />New Program</button>}
+    >
       <div className="cards">
         {res.data.map((t) => (
           <article key={t._id} className="card">
             <small className="muted">{fmt(t.date)} · {t.mode}</small>
             <h3>{t.title}</h3>
             <p className="muted">{t.team} · {t.seats} seats available</p>
-            {canManage && <button className="icon no del" aria-label="Delete" onClick={() => res.remove(t._id)}><Trash2 size={16} /></button>}
+            {canManage && (
+              <button className="icon no del" aria-label="Delete" onClick={() => res.remove(t._id)}><Trash2 size={16} /></button>
+            )}
           </article>
         ))}
       </div>
       {!res.data.length && <Empty>No training programs scheduled.</Empty>}
       {open && (
         <Modal title="New Training Session" onClose={() => setOpen(false)}>
-          <Form submitLabel="Create Session" onClose={() => setOpen(false)} onSubmit={(v) => res.add({ ...v, seats: Number(v.seats) })}
+          <Form
+            submitLabel="Create Session"
+            onClose={() => setOpen(false)}
+            onSubmit={(v) => res.add({ ...v, seats: Number(v.seats) })}
             fields={[
-              { name: "title", label: "Title", wide: true }, { name: "date", label: "Date", type: "date" },
+              { name: "title", label: "Title", wide: true },
+              { name: "date", label: "Date", type: "date" },
               { name: "mode", label: "Mode", options: ["Online", "In person"] },
-              { name: "team", label: "Target Team" }, { name: "seats", label: "Capacity Seats", type: "number" },
-            ]} />
+              { name: "team", label: "Target Team" },
+              { name: "seats", label: "Capacity Seats", type: "number" },
+            ]}
+          />
         </Modal>
       )}
     </Page>
@@ -462,11 +565,13 @@ function Training() {
 
 function Profile() {
   const { user, login } = useAuth();
-  const [p, setP] = useState({ name: user.name, email: user.email || "", phone: "", address: "", emergency: "" });
+  const [p, setP] = useState({ name: user.name || "", email: user.email || "", phone: "", address: "", emergency: "" });
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
-    api("/profile").then((r) => setP((x) => ({ ...x, ...(r.data || r) }))).catch(() => {});
+    api("/profile")
+      .then((r) => { if (r) setP((x) => ({ ...x, ...(r.data || r) })); })
+      .catch(() => {});
   }, []);
 
   const save = async (e) => {
@@ -476,7 +581,7 @@ function Profile() {
       login({ ...user, name: p.name });
       setMsg("Profile saved.");
     } catch {
-      setMsg("Saved locally.");
+      setMsg("Could not save to the server.");
     }
   };
 
@@ -490,7 +595,10 @@ function Profile() {
         <label>Phone<input value={p.phone} onChange={set("phone")} /></label>
         <label>Emergency Contact<input value={p.emergency} onChange={set("emergency")} /></label>
         <label className="wide">Address<textarea rows={3} value={p.address} onChange={set("address")} /></label>
-        <div className="form-actions wide">{msg && <span className="muted" role="status">{msg}</span>}<button className="btn">Save Changes</button></div>
+        <div className="form-actions wide">
+          {msg && <span className="muted" role="status">{msg}</span>}
+          <button className="btn">Save Changes</button>
+        </div>
       </form>
     </Page>
   );
@@ -571,6 +679,7 @@ nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
 
 .btn { display: inline-flex; align-items: center; gap: 8px; justify-content: center; background: #000; color: #fff; border: 1px solid #000; border-radius: var(--radius); padding: 8px 14px; font-weight: 500; font-size: 0.88rem; cursor: pointer; transition: 0.2s; }
 .btn:hover { background: #333; }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn.ghost { background: #fff; color: #111; border: 1px solid var(--border); }
 .btn.ghost:hover { background: #f5f5f5; }
 .btn.full { width: 100%; }
@@ -598,6 +707,7 @@ tr:last-child td { border-bottom: 0; }
 .clip { max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .acts { white-space: nowrap; text-align: right; }
 .who { display: flex; gap: 10px; align-items: center; }
+.who small { display: block; }
 
 .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; text-transform: capitalize; border: 1px solid var(--border); }
 .b-pending { background: #fffbe6; color: #8c6b00; border-color: #ffe58f; }
@@ -644,6 +754,7 @@ tr:last-child td { border-bottom: 0; }
 @media(max-width: 840px) {
   .shell { grid-template-columns: 1fr; }
   .side { display: none; }
+  .main { padding: 24px 16px; }
   .login { grid-template-columns: 1fr; }
   .login-art { display: none; }
 }
